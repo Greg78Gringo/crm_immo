@@ -1,3 +1,3 @@
-# crm_immo
+# bolt-admin-dashboard
 
-Initialized by Bolt to GitHub extension.
+[Edit in StackBlitz next generation editor ⚡️](https://stackblitz.com/~/github.com/donvito/bolt-admin-dashboard)
