@@ -8,7 +8,8 @@ import FurnitureList from '../components/FurnitureList';
 import OtherSalesMode from '../components/OtherSalesMode';
 import SinistreEnCours from '../components/SinistreEnCours';
 import ListeTravauxRealises from '../components/ListeTravauxRealises';
-import SellerInfoV3 from '../components/SellerInfoV3';
+import DealSellers from '../components/DealSellers';
+import DealBuyers from '../components/DealBuyers';
 import { PlusCircle } from 'lucide-react';
 
 const NewDeal = () => {
@@ -72,45 +73,6 @@ const NewDeal = () => {
   const [currentDesignation, setCurrentDesignation] = useState('');
   const [titleDetails, setTitleDetails] = useState('');
 
-  // État pour les vendeurs - Structure compatible avec SellerInfoV3
-  const [sellers, setSellers] = useState<{
-    id?: string;
-    firstName: string;
-    lastName: string;
-    phone: string;
-    email: string;
-    personTypeId: string;
-    maritalStatusId: string;
-    childrenCount: number;
-    childrenComments: string;
-    companyLegalForm: string;
-    siretNumber: string;
-    companyAddress: string;
-    companyPostalCode: string;
-    companyCity: string;
-    marriageDate: string;
-    marriageCity: string;
-    marriagePostalCode: string;
-    hasMarriageContract: boolean;
-    marriageContractNotary: string;
-    marriageContractDate: string;
-    matrimonialRegime: string;
-    hasRegimeModification: boolean;
-    modificationNotary: string;
-    regimeModificationDate: string;
-    newRegime: string;
-    divorceJudgmentDate: string;
-    divorceCourt: string;
-    pacsDate: string;
-    pacsCourt: string;
-    pacsCityHall: string;
-    hasPacsNotary: boolean;
-    pacsNotaryAddress: string;
-    pacsRegime: string;
-    spouseDeathDate: string;
-    spouseDeathPlace: string;
-  }[]>([]);
-
   // État pour les autres modes de vente
   const [salesModes, setSalesModes] = useState<{
     id?: string;
@@ -155,6 +117,31 @@ const NewDeal = () => {
     adresse_assureur: string;
     code_postal_assureur: string;
     ville_assureur: string;
+  }[]>([]);
+
+  // États pour les vendeurs et acheteurs
+  const [sellers, setSellers] = useState<{
+    id?: string;
+    contact_id: string;
+    contact?: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+    };
+  }[]>([]);
+
+  const [buyers, setBuyers] = useState<{
+    id?: string;
+    contact_id: string;
+    contact?: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+    };
   }[]>([]);
 
   // États pour la gestion du formulaire
@@ -219,11 +206,12 @@ const NewDeal = () => {
     setTitleDetails('');
     setCurrentDealId(null);
     setPropertyDetailsId(null);
-    setSellers([]);
     setSalesModes([]);
     setFurnitureItems([]);
     setSinistres([]);
     setTravaux([]);
+    setSellers([]);
+    setBuyers([]);
     setError('');
     setSuccess('');
   };
@@ -432,193 +420,208 @@ const NewDeal = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-semibold text-gray-900">
-          {currentDealId ? 'Modification de l\'affaire' : 'Nouvelle Affaire'}
-        </h1>
-        <div className="flex space-x-4">
-          <button
-            type="button"
-            onClick={handleNewDeal}
-            disabled={loading}
-            className={`flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
-              loading ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            <PlusCircle className="h-5 w-5 mr-2" />
-            Nouvelle affaire
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={loading || !dealName}
-            className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-              (loading || !dealName) ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          >
-            {loading ? 'Sauvegarde...' : 'Sauvegarder'}
-          </button>
+    <div className="min-h-screen bg-gray-100">
+      {/* En-tête fixe */}
+      <div className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+        <div className="px-6 py-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-semibold text-gray-900">
+              {currentDealId ? 'Modification de l\'affaire' : 'Nouvelle Affaire'}
+            </h1>
+            <div className="flex space-x-4">
+              <button
+                type="button"
+                onClick={handleNewDeal}
+                disabled={loading}
+                className={`flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors ${
+                  loading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                <PlusCircle className="h-5 w-5 mr-2" />
+                Nouvelle affaire
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading || !dealName}
+                className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors ${
+                  (loading || !dealName) ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                {loading ? 'Sauvegarde...' : 'Sauvegarder'}
+              </button>
+            </div>
+          </div>
+
+          {/* Messages d'erreur et de succès dans l'en-tête */}
+          {error && (
+            <div className="mt-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="mt-4 bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-md">
+              {success}
+            </div>
+          )}
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
-          {error}
-        </div>
-      )}
+      {/* Contenu principal avec padding pour compenser l'en-tête fixe */}
+      <div className="px-6 py-6">
+        <form className="space-y-6">
+          <DealBasicInfo
+            name={dealName}
+            setName={setDealName}
+            status={dealStatus}
+            setStatus={setDealStatus}
+            reason={dealReason}
+            setReason={setDealReason}
+            comments={dealComments}
+            setComments={setDealComments}
+          />
 
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-md">
-          {success}
-        </div>
-      )}
+          <PropertyPrice
+            mandateType={mandateType}
+            setMandateType={setMandateType}
+            estimatedPrice={estimatedPrice}
+            setEstimatedPrice={setEstimatedPrice}
+            displayPrice={displayPrice}
+            setDisplayPrice={setDisplayPrice}
+            agencyCommission={agencyCommission}
+            setAgencyCommission={setAgencyCommission}
+          />
 
-      <form className="space-y-6">
-        <DealBasicInfo
-          name={dealName}
-          setName={setDealName}
-          status={dealStatus}
-          setStatus={setDealStatus}
-          reason={dealReason}
-          setReason={setDealReason}
-          comments={dealComments}
-          setComments={setDealComments}
-        />
+          <OtherSalesMode
+            dealId={currentDealId}
+            salesModes={salesModes}
+            setSalesModes={setSalesModes}
+          />
 
-        <PropertyPrice
-          mandateType={mandateType}
-          setMandateType={setMandateType}
-          estimatedPrice={estimatedPrice}
-          setEstimatedPrice={setEstimatedPrice}
-          displayPrice={displayPrice}
-          setDisplayPrice={setDisplayPrice}
-          agencyCommission={agencyCommission}
-          setAgencyCommission={setAgencyCommission}
-        />
+          <PropertyDetails
+            propertyType={propertyType}
+            setPropertyType={setPropertyType}
+            address={address}
+            setAddress={setAddress}
+            city={city}
+            setCity={setCity}
+            postalCode={postalCode}
+            setPostalCode={setPostalCode}
+            dpe={dpe}
+            setDpe={setDpe}
+            ges={ges}
+            setGes={setGes}
+            roomsCount={roomsCount}
+            setRoomsCount={setRoomsCount}
+            bedroomsCount={bedroomsCount}
+            setBedroomsCount={setBedroomsCount}
+            livingRoomArea={livingRoomArea}
+            setLivingRoomArea={setLivingRoomArea}
+            diningRoomArea={diningRoomArea}
+            setDiningRoomArea={setDiningRoomArea}
+            bathroomsCount={bathroomsCount}
+            setBathroomsCount={setBathroomsCount}
+            showerRoomsCount={showerRoomsCount}
+            setShowerRoomsCount={setShowerRoomsCount}
+            wcCount={wcCount}
+            setWcCount={setWcCount}
+            hasCellar={hasCellar}
+            setHasCellar={setHasCellar}
+            hasPartialBasement={hasPartialBasement}
+            setHasPartialBasement={setHasPartialBasement}
+            hasFullBasement={hasFullBasement}
+            setHasFullBasement={setHasFullBasement}
+            hasTerrace={hasTerrace}
+            setHasTerrace={setHasTerrace}
+            terraceCount={terraceCount}
+            setTerraceCount={setTerraceCount}
+            terraceArea={terraceArea}
+            setTerraceArea={setTerraceArea}
+            hasGarden={hasGarden}
+            setHasGarden={setHasGarden}
+            gardenArea={gardenArea}
+            setGardenArea={setGardenArea}
+            hasParking={hasParking}
+            setHasParking={setHasParking}
+            parkingCount={parkingCount}
+            setParkingCount={setParkingCount}
+            hasBox={hasBox}
+            setHasBox={setHasBox}
+            boxCount={boxCount}
+            setBoxCount={setBoxCount}
+            hasPool={hasPool}
+            setHasPool={setHasPool}
+            isPoolPossible={isPoolPossible}
+            setIsPoolPossible={setIsPoolPossible}
+            hasFireplace={hasFireplace}
+            setHasFireplace={setHasFireplace}
+            hasAlarm={hasAlarm}
+            setHasAlarm={setHasAlarm}
+            heatingType={heatingType}
+            setHeatingType={setHeatingType}
+            hasSmokeDetector={hasSmokeDetector}
+            setHasSmokeDetector={setHasSmokeDetector}
+            hasBuriedFuelTank={hasBuriedFuelTank}
+            setHasBuriedFuelTank={setHasBuriedFuelTank}
+            hasNonBuriedFuelTank={hasNonBuriedFuelTank}
+            setHasNonBuriedFuelTank={setHasNonBuriedFuelTank}
+            isSubdivision={isSubdivision}
+            setIsSubdivision={setIsSubdivision}
+            hasExistingAsl={hasExistingAsl}
+            setHasExistingAsl={setHasExistingAsl}
+            hasDissolvedAsl={hasDissolvedAsl}
+            setHasDissolvedAsl={setHasDissolvedAsl}
+            hasEasements={hasEasements}
+            setHasEasements={setHasEasements}
+            hasSolarPanels={hasSolarPanels}
+            setHasSolarPanels={setHasSolarPanels}
+            hasFiberOptic={hasFiberOptic}
+            setHasFiberOptic={setHasFiberOptic}
+          />
 
-        <OtherSalesMode
-          dealId={currentDealId}
-          salesModes={salesModes}
-          setSalesModes={setSalesModes}
-        />
+          <PropertyTitle
+            propertyTitle={propertyTitle}
+            setPropertyTitle={setPropertyTitle}
+            titleDesignationIdentical={titleDesignationIdentical}
+            setTitleDesignationIdentical={setTitleDesignationIdentical}
+            currentDesignation={currentDesignation}
+            setCurrentDesignation={setCurrentDesignation}
+            titleDetails={titleDetails}
+            setTitleDetails={setTitleDetails}
+          />
 
-        <PropertyDetails
-          propertyType={propertyType}
-          setPropertyType={setPropertyType}
-          address={address}
-          setAddress={setAddress}
-          city={city}
-          setCity={setCity}
-          postalCode={postalCode}
-          setPostalCode={setPostalCode}
-          dpe={dpe}
-          setDpe={setDpe}
-          ges={ges}
-          setGes={setGes}
-          roomsCount={roomsCount}
-          setRoomsCount={setRoomsCount}
-          bedroomsCount={bedroomsCount}
-          setBedroomsCount={setBedroomsCount}
-          livingRoomArea={livingRoomArea}
-          setLivingRoomArea={setLivingRoomArea}
-          diningRoomArea={diningRoomArea}
-          setDiningRoomArea={setDiningRoomArea}
-          bathroomsCount={bathroomsCount}
-          setBathroomsCount={setBathroomsCount}
-          showerRoomsCount={showerRoomsCount}
-          setShowerRoomsCount={setShowerRoomsCount}
-          wcCount={wcCount}
-          setWcCount={setWcCount}
-          hasCellar={hasCellar}
-          setHasCellar={setHasCellar}
-          hasPartialBasement={hasPartialBasement}
-          setHasPartialBasement={setHasPartialBasement}
-          hasFullBasement={hasFullBasement}
-          setHasFullBasement={setHasFullBasement}
-          hasTerrace={hasTerrace}
-          setHasTerrace={setHasTerrace}
-          terraceCount={terraceCount}
-          setTerraceCount={setTerraceCount}
-          terraceArea={terraceArea}
-          setTerraceArea={setTerraceArea}
-          hasGarden={hasGarden}
-          setHasGarden={setHasGarden}
-          gardenArea={gardenArea}
-          setGardenArea={setGardenArea}
-          hasParking={hasParking}
-          setHasParking={setHasParking}
-          parkingCount={parkingCount}
-          setParkingCount={setParkingCount}
-          hasBox={hasBox}
-          setHasBox={setHasBox}
-          boxCount={boxCount}
-          setBoxCount={setBoxCount}
-          hasPool={hasPool}
-          setHasPool={setHasPool}
-          isPoolPossible={isPoolPossible}
-          setIsPoolPossible={setIsPoolPossible}
-          hasFireplace={hasFireplace}
-          setHasFireplace={setHasFireplace}
-          hasAlarm={hasAlarm}
-          setHasAlarm={setHasAlarm}
-          heatingType={heatingType}
-          setHeatingType={setHeatingType}
-          hasSmokeDetector={hasSmokeDetector}
-          setHasSmokeDetector={setHasSmokeDetector}
-          hasBuriedFuelTank={hasBuriedFuelTank}
-          setHasBuriedFuelTank={setHasBuriedFuelTank}
-          hasNonBuriedFuelTank={hasNonBuriedFuelTank}
-          setHasNonBuriedFuelTank={setHasNonBuriedFuelTank}
-          isSubdivision={isSubdivision}
-          setIsSubdivision={setIsSubdivision}
-          hasExistingAsl={hasExistingAsl}
-          setHasExistingAsl={setHasExistingAsl}
-          hasDissolvedAsl={hasDissolvedAsl}
-          setHasDissolvedAsl={setHasDissolvedAsl}
-          hasEasements={hasEasements}
-          setHasEasements={setHasEasements}
-          hasSolarPanels={hasSolarPanels}
-          setHasSolarPanels={setHasSolarPanels}
-          hasFiberOptic={hasFiberOptic}
-          setHasFiberOptic={setHasFiberOptic}
-        />
+          <FurnitureList
+            dealId={currentDealId}
+            furnitureItems={furnitureItems}
+            setFurnitureItems={setFurnitureItems}
+          />
 
-        <PropertyTitle
-          propertyTitle={propertyTitle}
-          setPropertyTitle={setPropertyTitle}
-          titleDesignationIdentical={titleDesignationIdentical}
-          setTitleDesignationIdentical={setTitleDesignationIdentical}
-          currentDesignation={currentDesignation}
-          setCurrentDesignation={setCurrentDesignation}
-          titleDetails={titleDetails}
-          setTitleDetails={setTitleDetails}
-        />
+          <SinistreEnCours
+            dealId={currentDealId}
+            sinistres={sinistres}
+            setSinistres={setSinistres}
+          />
 
-        <FurnitureList
-          dealId={currentDealId}
-          furnitureItems={furnitureItems}
-          setFurnitureItems={setFurnitureItems}
-        />
+          <ListeTravauxRealises
+            dealId={currentDealId}
+            travaux={travaux}
+            setTravaux={setTravaux}
+          />
 
-        <SinistreEnCours
-          dealId={currentDealId}
-          sinistres={sinistres}
-          setSinistres={setSinistres}
-        />
+          <DealSellers
+            dealId={currentDealId}
+            sellers={sellers}
+            setSellers={setSellers}
+          />
 
-        <ListeTravauxRealises
-          dealId={currentDealId}
-          travaux={travaux}
-          setTravaux={setTravaux}
-        />
-
-        <SellerInfoV3
-          dealId={currentDealId}
-          sellers={sellers}
-          setSellers={setSellers}
-        />
-      </form>
+          <DealBuyers
+            dealId={currentDealId}
+            buyers={buyers}
+            setBuyers={setBuyers}
+          />
+        </form>
+      </div>
     </div>
   );
 };

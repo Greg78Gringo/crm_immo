@@ -7,7 +7,10 @@ import Users from './pages/Users';
 import Login from './pages/Login';
 import Agents from './pages/Agents';
 import NewDeal from './pages/NewDeal';
-import NewBuyer from './pages/NewBuyer';
+import NewContact from './pages/NewContact';
+import ContactsList from './pages/ContactsList';
+import ContactView from './pages/ContactView';
+import DocumentsList from './pages/DocumentsList';
 import { useAuth } from './hooks/useAuth';
 
 function LoadingSpinner() {
@@ -40,7 +43,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!session) {
-    return <Navigate to="/login\" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   return <ProtectedLayout>{children}</ProtectedLayout>;
@@ -58,11 +61,11 @@ function App() {
       <Routes>
         <Route 
           path="/" 
-          element={<Navigate to="/dashboard\" replace />} 
+          element={<Navigate to="/dashboard" replace />} 
         />
         <Route 
           path="/login" 
-          element={session ? <Navigate to="/dashboard\" replace /> : <Login />} 
+          element={session ? <Navigate to="/dashboard" replace /> : <Login />} 
         />
         <Route
           path="/dashboard"
@@ -81,10 +84,42 @@ function App() {
           }
         />
         <Route
-          path="/new-buyer"
+          path="/new-contact"
           element={
             <ProtectedRoute>
-              <NewBuyer />
+              <NewContact />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/contact/:contactId"
+          element={
+            <ProtectedRoute>
+              <ContactView />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/contact/:contactId/edit"
+          element={
+            <ProtectedRoute>
+              <ContactView />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/contacts"
+          element={
+            <ProtectedRoute>
+              <ContactsList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/documents-list"
+          element={
+            <ProtectedRoute>
+              <DocumentsList />
             </ProtectedRoute>
           }
         />
@@ -104,7 +139,7 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/dashboard\" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Router>
   );

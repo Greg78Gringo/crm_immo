@@ -6,14 +6,18 @@ import {
   Database,
   UserCog,
   FilePlus,
-  UserPlus
+  UserPlus,
+  FileText,
+  List
 } from 'lucide-react';
 
 const Sidebar = () => {
   const menuItems = [
     { icon: LayoutDashboard, label: 'Tableau de bord', path: '/dashboard' },
     { icon: FilePlus, label: 'Nouvelle Affaire', path: '/new-deal' },
-    { icon: UserPlus, label: 'Nouvel Acquéreur', path: '/new-buyer' },
+    { icon: UserPlus, label: 'Nouveau Contact', path: '/new-contact' },
+    { icon: List, label: 'Liste Contacts', path: '/contacts' },
+    { icon: FileText, label: 'Liste des Documents', path: '/documents-list' },
     { icon: UserCog, label: 'Mon Profil', path: '/agent-profile' },
     { icon: Users, label: 'Utilisateurs', path: '/users' }
   ];
