@@ -15,6 +15,7 @@ interface Photo {
   isMain: boolean;
   size: number;
   uploadedAt: string;
+  lastModified: string; // Ajout du champ last_modified
 }
 
 const Phototheque = () => {
@@ -64,26 +65,51 @@ const Phototheque = () => {
     }
   }, [selectedDealId]);
 
+  // Fonction pour créer une URL avec cache-busting
+  const createCacheBustedUrl = (publicUrl: string, lastModified: string) => {
+    const url = new URL(publicUrl);
+    // Utiliser le timestamp de last_modified comme paramètre de cache-busting
+    const timestamp = new Date(lastModified).getTime();
+    url.searchParams.set('t', timestamp.toString());
+    return url.toString();
+  };
+
+  const loadPhotos = async () => {
+    if (!selectedDealId) return;
+
+    setLoading(true);
+    try {
+      const { data: files, error: listError } = await supabase.storage
+        .from('property-photos')
+        .list(`deals/${selectedDealId}`, {
+          limit: 100,
+          sortBy: { column: 'name', order: 'asc' }
+        });
+
+      if (listError) throw listError;
+
       const photosWithUrls = await Promise.all(
         (files || []).map(async (file) => {
           const { data: urlData } = supabase.storage
             .from('property-photos')
             .getPublicUrl(`deals/${selectedDealId}/${file.name}`);
 
+          // Utiliser updated_at ou created_at comme fallback pour le cache-busting
+          const lastModified = file.updated_at || file.created_at || new Date().toISOString();
+          
           return {
             id: file.id || file.name,
             name: file.name,
-            url: urlData.publicUrl,
+            url: createCacheBustedUrl(urlData.publicUrl, lastModified),
             isMain: file.name.includes('_main.'),
             size: file.metadata?.size || 0,
-            // Utilisé pour casser le cache navigateur si la photo est modifiée
-            cacheKey: file.updated_at || file.last_modified || file.created_at || new Date().toISOString()
+            uploadedAt: file.created_at || new Date().toISOString(),
+            lastModified: lastModified
           };
         })
       );
 
       setPhotos(photosWithUrls);
-
     } catch (err) {
       console.error('Erreur lors du chargement des photos:', err);
       setError('Erreur lors du chargement des photos');
@@ -194,7 +220,9 @@ const Phototheque = () => {
   };
 
   const downloadFile = async (url: string): Promise<Blob> => {
-    const response = await fetch(url);
+    // Retirer les paramètres de cache-busting pour le téléchargement
+    const cleanUrl = url.split('?')[0];
+    const response = await fetch(cleanUrl);
     if (!response.ok) {
       throw new Error('Erreur lors du téléchargement du fichier');
     }
@@ -464,14 +492,14 @@ const Phototheque = () => {
                     key={photo.id}
                     className="relative group bg-gray-100 rounded-lg overflow-hidden aspect-square"
                   >
-                    {/* Image */}
+                    {/* Image avec cache-busting */}
                     <img
-                      src={photo.url + '?v=' + photo.cacheKey}
+                      src={photo.url}
                       alt={photo.name}
                       className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
                       onClick={() => setSelectedPhoto(photo)}
+                      loading="lazy"
                     />
-
 
                     {/* Badge photo principale */}
                     {photo.isMain && (
@@ -556,4 +584,94 @@ const Phototheque = () => {
       </div>
 
       {/* Modal de confirmation de suppression */}
-      {s
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="bg-red-100 rounded-full p-3 mr-4">
+                  <Trash2 className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Supprimer la photo
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Cette action est irréversible
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <p className="text-gray-700 mb-2">
+                  Êtes-vous sûr de vouloir supprimer cette photo ?
+                </p>
+                <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                  <strong>Fichier :</strong> {showDeleteConfirm.name}
+                </p>
+                {showDeleteConfirm.isMain && (
+                  <div className="mt-2 bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2 rounded-md text-sm">
+                    <strong>⚠️ Attention :</strong> Cette photo est actuellement définie comme photo de référence.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deletePhoto(showDeleteConfirm)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                >
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de visualisation */}
+      {selectedPhoto && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-4xl max-h-full">
+            <button
+              type="button"
+              onClick={() => setSelectedPhoto(null)}
+              className="absolute top-4 right-4 bg-white rounded-full p-2 hover:bg-gray-100 transition-colors z-10"
+            >
+              <Eye className="h-5 w-5 text-gray-700" />
+            </button>
+            
+            <img
+              src={selectedPhoto.url}
+              alt={selectedPhoto.name}
+              className="max-w-full max-h-full object-contain rounded-lg"
+            />
+            
+            <div className="absolute bottom-4 left-4 bg-black bg-opacity-75 text-white p-3 rounded-lg">
+              <p className="font-medium">{selectedPhoto.name}</p>
+              <p className="text-sm opacity-75">
+                {formatFileSize(selectedPhoto.size)} • {formatDate(selectedPhoto.uploadedAt)}
+              </p>
+              {selectedPhoto.isMain && (
+                <div className="flex items-center mt-1">
+                  <Star className="h-4 w-4 text-yellow-400 mr-1" />
+                  <span className="text-sm">Photo de référence</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Phototheque;
