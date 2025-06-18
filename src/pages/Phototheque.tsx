@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Upload, Trash2, Eye, Star, StarOff } from 'lucide-react';
+import { Camera, Upload, Trash2, Eye, Star, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Deal {
   id: string;
   name: string;
   created_at: string;
+}
+
+interface PhotoMetadata {
+  id: string;
+  deal_id: string;
+  file_name: string;
+  file_path: string;
+  is_reference: boolean;
+  original_name: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_at: string;
+  updated_at: string;
 }
 
 interface Photo {
@@ -15,7 +28,8 @@ interface Photo {
   isMain: boolean;
   size: number;
   uploadedAt: string;
-  lastModified: string; // Ajout du champ last_modified
+  lastModified: string;
+  metadata: PhotoMetadata;
 }
 
 const Phototheque = () => {
@@ -65,53 +79,51 @@ const Phototheque = () => {
     }
   }, [selectedDealId]);
 
-  // Fonction pour créer une URL avec cache-busting
-  const createCacheBustedUrl = (publicUrl: string, lastModified: string) => {
-    const url = new URL(publicUrl);
-    // Utiliser le timestamp de last_modified comme paramètre de cache-busting
-    const timestamp = new Date(lastModified).getTime();
-    url.searchParams.set('t', timestamp.toString());
-    return url.toString();
-  };
-
   const loadPhotos = async () => {
     if (!selectedDealId) return;
 
     setLoading(true);
     try {
-      const { data: files, error: listError } = await supabase.storage
-        .from('property-photos')
-        .list(`deals/${selectedDealId}`, {
-          limit: 100,
-          sortBy: { column: 'name', order: 'asc' }
-        });
+      console.log('🔄 Chargement des photos pour l\'affaire:', selectedDealId);
 
-      if (listError) throw listError;
+      // Charger les métadonnées depuis la base de données
+      const { data: photoMetadata, error: metadataError } = await supabase
+        .from('photo_metadata')
+        .select('*')
+        .eq('deal_id', selectedDealId)
+        .order('is_reference', { ascending: false })
+        .order('uploaded_at', { ascending: true });
 
-      const photosWithUrls = await Promise.all(
-        (files || []).map(async (file) => {
-          const { data: urlData } = supabase.storage
-            .from('property-photos')
-            .getPublicUrl(`deals/${selectedDealId}/${file.name}`);
+      if (metadataError) throw metadataError;
 
-          // Utiliser updated_at ou created_at comme fallback pour le cache-busting
-          const lastModified = file.updated_at || file.created_at || new Date().toISOString();
-          
-          return {
-            id: file.id || file.name,
-            name: file.name,
-            url: createCacheBustedUrl(urlData.publicUrl, lastModified),
-            isMain: file.name.includes('_main.'),
-            size: file.metadata?.size || 0,
-            uploadedAt: file.created_at || new Date().toISOString(),
-            lastModified: lastModified
-          };
-        })
-      );
+      console.log('📊 Métadonnées chargées:', photoMetadata);
 
+      // Créer les objets Photo avec les URLs
+      const photosWithUrls = photoMetadata?.map((metadata) => {
+        const { data: urlData } = supabase.storage
+          .from('property-photos')
+          .getPublicUrl(metadata.file_path);
+
+        // Ajouter un timestamp pour éviter le cache
+        const url = new URL(urlData.publicUrl);
+        url.searchParams.set('t', new Date(metadata.updated_at).getTime().toString());
+
+        return {
+          id: metadata.id,
+          name: metadata.file_name,
+          url: url.toString(),
+          isMain: metadata.is_reference,
+          size: metadata.file_size || 0,
+          uploadedAt: metadata.uploaded_at,
+          lastModified: metadata.updated_at,
+          metadata: metadata
+        };
+      }) || [];
+
+      console.log('✅ Photos avec URLs:', photosWithUrls);
       setPhotos(photosWithUrls);
     } catch (err) {
-      console.error('Erreur lors du chargement des photos:', err);
+      console.error('❌ Erreur lors du chargement des photos:', err);
       setError('Erreur lors du chargement des photos');
     } finally {
       setLoading(false);
@@ -121,7 +133,7 @@ const Phototheque = () => {
   const getNextPhotoIndex = () => {
     const existingIndexes = photos
       .map(photo => {
-        const match = photo.name.match(/_(\d+)(_main)?\./);
+        const match = photo.name.match(/_(\d+)\./);
         return match ? parseInt(match[1]) : 0;
       })
       .filter(index => index > 0);
@@ -140,6 +152,8 @@ const Phototheque = () => {
     setSuccess('');
 
     try {
+      let nextIndex = getNextPhotoIndex();
+      
       const uploadPromises = Array.from(files).map(async (file) => {
         // Vérifier le type de fichier
         if (!file.type.startsWith('image/')) {
@@ -151,19 +165,39 @@ const Phototheque = () => {
           throw new Error(`${file.name} est trop volumineux (max 10MB)`);
         }
 
-        const nextIndex = getNextPhotoIndex();
         const fileExtension = file.name.split('.').pop();
         const newFileName = `${selectedDealId}_${nextIndex}.${fileExtension}`;
+        const filePath = `deals/${selectedDealId}/${newFileName}`;
 
+        console.log(`📤 Upload de ${file.name} vers ${filePath}`);
+
+        // Upload du fichier dans Supabase Storage
         const { error: uploadError } = await supabase.storage
           .from('property-photos')
-          .upload(`deals/${selectedDealId}/${newFileName}`, file, {
+          .upload(filePath, file, {
             cacheControl: '3600',
             upsert: false
           });
 
         if (uploadError) throw uploadError;
 
+        // Sauvegarder les métadonnées dans la base de données
+        const { error: metadataError } = await supabase
+          .from('photo_metadata')
+          .insert({
+            deal_id: selectedDealId,
+            file_name: newFileName,
+            file_path: filePath,
+            is_reference: false,
+            original_name: file.name,
+            file_size: file.size,
+            mime_type: file.type
+          });
+
+        if (metadataError) throw metadataError;
+
+        console.log(`✅ Photo ${newFileName} uploadée et métadonnées sauvegardées`);
+        nextIndex++;
         return newFileName;
       });
 
@@ -171,7 +205,7 @@ const Phototheque = () => {
       setSuccess(`${files.length} photo(s) uploadée(s) avec succès !`);
       await loadPhotos();
     } catch (err: any) {
-      console.error('Erreur lors de l\'upload:', err);
+      console.error('❌ Erreur lors de l\'upload:', err);
       setError(err.message || 'Erreur lors de l\'upload des photos');
     } finally {
       setUploading(false);
@@ -203,30 +237,32 @@ const Phototheque = () => {
 
   const deletePhoto = async (photo: Photo) => {
     try {
-      const { error } = await supabase.storage
+      console.log(`🗑️ Suppression de la photo: ${photo.name}`);
+
+      // Supprimer le fichier du storage
+      const { error: storageError } = await supabase.storage
         .from('property-photos')
-        .remove([`deals/${selectedDealId}/${photo.name}`]);
+        .remove([photo.metadata.file_path]);
 
-      if (error) throw error;
+      if (storageError) throw storageError;
 
+      // Supprimer les métadonnées de la base de données
+      const { error: metadataError } = await supabase
+        .from('photo_metadata')
+        .delete()
+        .eq('id', photo.metadata.id);
+
+      if (metadataError) throw metadataError;
+
+      console.log(`✅ Photo ${photo.name} supprimée avec succès`);
       setSuccess('Photo supprimée avec succès !');
       setShowDeleteConfirm(null);
       await loadPhotos();
     } catch (err: any) {
-      console.error('Erreur lors de la suppression:', err);
+      console.error('❌ Erreur lors de la suppression:', err);
       setError('Erreur lors de la suppression de la photo');
       setShowDeleteConfirm(null);
     }
-  };
-
-  const downloadFile = async (url: string): Promise<Blob> => {
-    // Retirer les paramètres de cache-busting pour le téléchargement
-    const cleanUrl = url.split('?')[0];
-    const response = await fetch(cleanUrl);
-    if (!response.ok) {
-      throw new Error('Erreur lors du téléchargement du fichier');
-    }
-    return response.blob();
   };
 
   const setMainPhoto = async (photo: Photo) => {
@@ -237,90 +273,34 @@ const Phototheque = () => {
     setSuccess('');
 
     try {
-      // Si c'est déjà la photo principale, la décocher
-      if (photo.isMain) {
-        // Télécharger le fichier actuel
-        const fileBlob = await downloadFile(photo.url);
-        
-        // Créer le nouveau nom (retirer "_main")
-        const newName = photo.name.replace('_main.', '_1.');
-        
-        // Uploader avec le nouveau nom
-        const { error: uploadError } = await supabase.storage
-          .from('property-photos')
-          .upload(`deals/${selectedDealId}/${newName}`, fileBlob, {
-            cacheControl: '3600',
-            upsert: true
-          });
+      console.log(`⭐ Mise à jour de la photo de référence: ${photo.name}`);
+      console.log(`État actuel isMain: ${photo.isMain}`);
 
-        if (uploadError) throw uploadError;
+      const newReferenceStatus = !photo.isMain;
 
-        // Supprimer l'ancien fichier
-        const { error: deleteError } = await supabase.storage
-          .from('property-photos')
-          .remove([`deals/${selectedDealId}/${photo.name}`]);
+      // Mettre à jour dans la base de données
+      const { error: updateError } = await supabase
+        .from('photo_metadata')
+        .update({ 
+          is_reference: newReferenceStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', photo.metadata.id);
 
-        if (deleteError) throw deleteError;
+      if (updateError) throw updateError;
 
-        setSuccess('Photo de référence retirée !');
+      console.log(`✅ Statut de référence mis à jour: ${newReferenceStatus}`);
+
+      if (newReferenceStatus) {
+        setSuccess('Photo définie comme référence !');
       } else {
-        // Décocher l'ancienne photo principale s'il y en a une
-        const currentMainPhoto = photos.find(p => p.isMain);
-        if (currentMainPhoto) {
-          // Télécharger l'ancienne photo principale
-          const oldMainBlob = await downloadFile(currentMainPhoto.url);
-          
-          // Créer le nouveau nom pour l'ancienne photo principale
-          const oldMainNewName = currentMainPhoto.name.replace('_main.', '_1.');
-          
-          // Uploader l'ancienne photo avec le nouveau nom
-          const { error: uploadOldError } = await supabase.storage
-            .from('property-photos')
-            .upload(`deals/${selectedDealId}/${oldMainNewName}`, oldMainBlob, {
-              cacheControl: '3600',
-              upsert: true
-            });
-
-          if (uploadOldError) throw uploadOldError;
-
-          // Supprimer l'ancien fichier de l'ancienne photo principale
-          const { error: deleteOldError } = await supabase.storage
-            .from('property-photos')
-            .remove([`deals/${selectedDealId}/${currentMainPhoto.name}`]);
-
-          if (deleteOldError) throw deleteOldError;
-        }
-
-        // Télécharger la nouvelle photo principale
-        const newMainBlob = await downloadFile(photo.url);
-        
-        // Créer le nouveau nom pour la nouvelle photo principale
-        const newMainName = photo.name.replace(/(_\d+)\./, '_main.');
-        
-        // Uploader la nouvelle photo avec le nom "_main"
-        const { error: uploadNewError } = await supabase.storage
-          .from('property-photos')
-          .upload(`deals/${selectedDealId}/${newMainName}`, newMainBlob, {
-            cacheControl: '3600',
-            upsert: true
-          });
-
-        if (uploadNewError) throw uploadNewError;
-
-        // Supprimer l'ancien fichier de la nouvelle photo principale
-        const { error: deleteNewError } = await supabase.storage
-          .from('property-photos')
-          .remove([`deals/${selectedDealId}/${photo.name}`]);
-
-        if (deleteNewError) throw deleteNewError;
-
-        setSuccess('Photo de référence mise à jour !');
+        setSuccess('Photo de référence retirée !');
       }
 
-      // Recharger les photos
+      // Recharger les photos pour voir les changements
       await loadPhotos();
     } catch (err: any) {
-      console.error('Erreur lors de la mise à jour:', err);
+      console.error('❌ Erreur lors de la mise à jour:', err);
       setError(`Erreur lors de la mise à jour de la photo de référence: ${err.message}`);
     } finally {
       setUpdatingReference(false);
@@ -468,6 +448,11 @@ const Phototheque = () => {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">
                 Photos de l'affaire ({photos.length})
+                {photos.some(p => p.isMain) && (
+                  <span className="ml-2 text-sm text-yellow-600 bg-yellow-100 px-2 py-1 rounded-full">
+                    1 photo de référence
+                  </span>
+                )}
               </h2>
               {loading && (
                 <div className="flex items-center text-sm text-gray-600">
@@ -490,9 +475,11 @@ const Phototheque = () => {
                 {photos.map((photo) => (
                   <div
                     key={photo.id}
-                    className="relative group bg-gray-100 rounded-lg overflow-hidden aspect-square"
+                    className={`relative group bg-gray-100 rounded-lg overflow-hidden aspect-square ${
+                      photo.isMain ? 'ring-2 ring-yellow-400 ring-offset-2' : ''
+                    }`}
                   >
-                    {/* Image avec cache-busting */}
+                    {/* Image */}
                     <img
                       src={photo.url}
                       alt={photo.name}
@@ -503,8 +490,8 @@ const Phototheque = () => {
 
                     {/* Badge photo principale */}
                     {photo.isMain && (
-                      <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center">
-                        <Star className="h-3 w-3 mr-1" />
+                      <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded-full text-xs font-medium flex items-center shadow-lg">
+                        <Star className="h-3 w-3 mr-1 fill-current" />
                         Référence
                       </div>
                     )}
@@ -516,7 +503,7 @@ const Phototheque = () => {
                         <button
                           type="button"
                           onClick={() => setSelectedPhoto(photo)}
-                          className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors"
+                          className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors shadow-lg"
                           title="Voir en grand"
                         >
                           <Eye className="h-4 w-4 text-gray-700" />
@@ -527,7 +514,7 @@ const Phototheque = () => {
                           type="button"
                           onClick={() => setMainPhoto(photo)}
                           disabled={updatingReference}
-                          className={`p-2 rounded-full transition-colors ${
+                          className={`p-2 rounded-full transition-colors shadow-lg ${
                             updatingReference
                               ? 'bg-gray-300 cursor-not-allowed'
                               : photo.isMain
@@ -544,10 +531,8 @@ const Phototheque = () => {
                         >
                           {updatingReference ? (
                             <div className="animate-spin h-4 w-4 border-2 border-gray-600 border-t-transparent rounded-full"></div>
-                          ) : photo.isMain ? (
-                            <StarOff className="h-4 w-4" />
                           ) : (
-                            <Star className="h-4 w-4" />
+                            <Star className={`h-4 w-4 ${photo.isMain ? 'fill-current' : ''}`} />
                           )}
                         </button>
 
@@ -556,7 +541,7 @@ const Phototheque = () => {
                           type="button"
                           onClick={() => confirmDeletePhoto(photo)}
                           disabled={updatingReference}
-                          className={`p-2 rounded-full transition-colors ${
+                          className={`p-2 rounded-full transition-colors shadow-lg ${
                             updatingReference
                               ? 'bg-gray-300 cursor-not-allowed'
                               : 'bg-red-500 hover:bg-red-600 text-white'
@@ -644,9 +629,10 @@ const Phototheque = () => {
             <button
               type="button"
               onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 bg-white rounded-full p-2 hover:bg-gray-100 transition-colors z-10"
+              className="absolute top-4 right-4 bg-white rounded-full p-2 hover:bg-gray-100 transition-colors z-10 shadow-lg"
+              title="Fermer"
             >
-              <Eye className="h-5 w-5 text-gray-700" />
+              <X className="h-5 w-5 text-gray-700" />
             </button>
             
             <img
@@ -662,7 +648,7 @@ const Phototheque = () => {
               </p>
               {selectedPhoto.isMain && (
                 <div className="flex items-center mt-1">
-                  <Star className="h-4 w-4 text-yellow-400 mr-1" />
+                  <Star className="h-4 w-4 text-yellow-400 mr-1 fill-current" />
                   <span className="text-sm">Photo de référence</span>
                 </div>
               )}
