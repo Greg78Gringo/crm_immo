@@ -11,6 +11,7 @@ import NewContact from './pages/NewContact';
 import ContactsList from './pages/ContactsList';
 import ContactView from './pages/ContactView';
 import DocumentsList from './pages/DocumentsList';
+import Phototheque from './pages/Phototheque';
 import { useAuth } from './hooks/useAuth';
 
 function LoadingSpinner() {
@@ -120,6 +121,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DocumentsList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/phototheque"
+          element={
+            <ProtectedRoute>
+              <Phototheque />
             </ProtectedRoute>
           }
         />

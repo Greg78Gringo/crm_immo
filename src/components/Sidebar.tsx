@@ -8,7 +8,8 @@ import {
   FilePlus,
   UserPlus,
   FileText,
-  List
+  List,
+  Camera
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -18,6 +19,7 @@ const Sidebar = () => {
     { icon: UserPlus, label: 'Nouveau Contact', path: '/new-contact' },
     { icon: List, label: 'Liste Contacts', path: '/contacts' },
     { icon: FileText, label: 'Liste des Documents', path: '/documents-list' },
+    { icon: Camera, label: 'Photothèque', path: '/phototheque' },
     { icon: UserCog, label: 'Mon Profil', path: '/agent-profile' },
     { icon: Users, label: 'Utilisateurs', path: '/users' }
   ];
