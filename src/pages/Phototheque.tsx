@@ -64,20 +64,6 @@ const Phototheque = () => {
     }
   }, [selectedDealId]);
 
-  const loadPhotos = async () => {
-    if (!selectedDealId) return;
-
-    setLoading(true);
-    try {
-      const { data: files, error: listError } = await supabase.storage
-        .from('property-photos')
-        .list(`deals/${selectedDealId}`, {
-          limit: 100,
-          sortBy: { column: 'name', order: 'asc' }
-        });
-
-      if (listError) throw listError;
-
       const photosWithUrls = await Promise.all(
         (files || []).map(async (file) => {
           const { data: urlData } = supabase.storage
@@ -90,12 +76,14 @@ const Phototheque = () => {
             url: urlData.publicUrl,
             isMain: file.name.includes('_main.'),
             size: file.metadata?.size || 0,
-            uploadedAt: file.created_at || new Date().toISOString()
+            // Utilisé pour casser le cache navigateur si la photo est modifiée
+            cacheKey: file.updated_at || file.last_modified || file.created_at || new Date().toISOString()
           };
         })
       );
 
       setPhotos(photosWithUrls);
+
     } catch (err) {
       console.error('Erreur lors du chargement des photos:', err);
       setError('Erreur lors du chargement des photos');
@@ -478,11 +466,12 @@ const Phototheque = () => {
                   >
                     {/* Image */}
                     <img
-                      src={photo.url}
+                      src={photo.url + '?v=' + photo.cacheKey}
                       alt={photo.name}
                       className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
                       onClick={() => setSelectedPhoto(photo)}
                     />
+
 
                     {/* Badge photo principale */}
                     {photo.isMain && (
@@ -567,97 +556,4 @@ const Phototheque = () => {
       </div>
 
       {/* Modal de confirmation de suppression */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
-            <div className="flex items-center mb-4">
-              <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                <Trash2 className="h-5 w-5 text-red-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Supprimer la photo
-                </h3>
-                <p className="text-sm text-gray-500">
-                  Cette action est irréversible
-                </p>
-              </div>
-            </div>
-            
-            <div className="mb-4">
-              <p className="text-sm text-gray-700">
-                Êtes-vous sûr de vouloir supprimer la photo <strong>{showDeleteConfirm.name}</strong> ?
-              </p>
-              {showDeleteConfirm.isMain && (
-                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <p className="text-sm text-yellow-800 flex items-center">
-                    <Star className="h-4 w-4 mr-1" />
-                    Cette photo est actuellement définie comme photo de référence.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={() => deletePhoto(showDeleteConfirm)}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                Supprimer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal pour voir la photo en grand */}
-      {selectedPhoto && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedPhoto(null)}
-        >
-          <div className="relative max-w-4xl max-h-full">
-            <img
-              src={selectedPhoto.url}
-              alt={selectedPhoto.name}
-              className="max-w-full max-h-full object-contain"
-            />
-            
-            {/* Bouton fermer */}
-            <button
-              type="button"
-              onClick={() => setSelectedPhoto(null)}
-              className="absolute top-4 right-4 bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-75 transition-colors"
-            >
-              ✕
-            </button>
-
-            {/* Informations de la photo */}
-            <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white p-3 rounded-lg">
-              <p className="font-medium">{selectedPhoto.name}</p>
-              <p className="text-sm opacity-75">
-                {formatFileSize(selectedPhoto.size)} • {formatDate(selectedPhoto.uploadedAt)}
-              </p>
-              {selectedPhoto.isMain && (
-                <div className="flex items-center mt-1">
-                  <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                  <span className="text-sm">Photo de référence</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default Phototheque;
+      {s
