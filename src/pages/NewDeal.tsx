@@ -31,6 +31,7 @@ const NewDeal = () => {
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [postalCode, setPostalCode] = useState('');
+  const [coordinates, setCoordinates] = useState('');
   const [dpe, setDpe] = useState('');
   const [ges, setGes] = useState('');
   const [roomsCount, setRoomsCount] = useState(0);
@@ -165,6 +166,7 @@ const NewDeal = () => {
     setAddress('');
     setCity('');
     setPostalCode('');
+    setCoordinates('');
     setDpe('');
     setGes('');
     setRoomsCount(0);
@@ -257,7 +259,24 @@ const NewDeal = () => {
       setCurrentDealId(dealId);
 
       // Sauvegarder les détails de la propriété seulement s'il y a des données
-      if (propertyType || address || city || postalCode || roomsCount > 0 || bedroomsCount > 0 || dpe || ges || propertyTitle) {
+      if (propertyType || address || city || postalCode || roomsCount > 0 || bedroomsCount > 0 || dpe || ges || propertyTitle || coordinates) {
+        // Traiter les coordonnées pour extraire latitude et longitude
+        let latitude = null;
+        let longitude = null;
+        
+        if (coordinates) {
+          const coordParts = coordinates.split(',').map(part => part.trim());
+          if (coordParts.length === 2) {
+            const lat = parseFloat(coordParts[0]);
+            const lng = parseFloat(coordParts[1]);
+            
+            if (!isNaN(lat) && !isNaN(lng)) {
+              latitude = lat;
+              longitude = lng;
+            }
+          }
+        }
+
         const propertyDetailsData = {
           id: propertyDetailsId || undefined,
           deal_id: dealId,
@@ -265,6 +284,8 @@ const NewDeal = () => {
           address: address || null,
           city: city || null,
           postal_code: postalCode || null,
+          latitude: latitude,
+          longitude: longitude,
           dpe: dpe || null,
           ges: ges || null,
           rooms_count: roomsCount || null,
@@ -508,6 +529,8 @@ const NewDeal = () => {
             setCity={setCity}
             postalCode={postalCode}
             setPostalCode={setPostalCode}
+            coordinates={coordinates}
+            setCoordinates={setCoordinates}
             dpe={dpe}
             setDpe={setDpe}
             ges={ges}
