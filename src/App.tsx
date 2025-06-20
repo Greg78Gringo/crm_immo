@@ -3,9 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
-import Users from './pages/Users';
 import Login from './pages/Login';
 import Agents from './pages/Agents';
+import AgentsManagement from './pages/AgentsManagement';
 import NewDeal from './pages/NewDeal';
 import NewContact from './pages/NewContact';
 import ContactsList from './pages/ContactsList';
@@ -45,6 +45,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!session) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <ProtectedLayout>{children}</ProtectedLayout>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { session, loading, isAdmin } = useAuth();
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <ProtectedLayout>{children}</ProtectedLayout>;
@@ -133,11 +151,11 @@ function App() {
           }
         />
         <Route
-          path="/users"
+          path="/agents-management"
           element={
-            <ProtectedRoute>
-              <Users />
-            </ProtectedRoute>
+            <AdminRoute>
+              <AgentsManagement />
+            </AdminRoute>
           }
         />
         <Route

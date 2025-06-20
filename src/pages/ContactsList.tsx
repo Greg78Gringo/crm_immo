@@ -4,7 +4,8 @@ import ContactsTable from '../components/contacts/ContactsTable';
 import ContactsFilters from '../components/contacts/ContactsFilters';
 import ContactsStats from '../components/contacts/ContactsStats';
 import { supabase } from '../lib/supabase';
-import { Users } from 'lucide-react';
+import { Users, Shield } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 
 export interface Contact {
   id: string;
@@ -38,6 +39,7 @@ export interface FilterState {
 
 const ContactsList = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +120,7 @@ const ContactsList = () => {
     console.log('🔄 Début du chargement des contacts...');
     console.log('📊 Filtres actifs:', filters);
     console.log('👥 Cache des agents:', agentsCache.size, 'agents');
+    console.log('🔑 Mode Admin:', isAdmin);
     setLoading(true);
     setError('');
 
@@ -227,7 +230,7 @@ const ContactsList = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentUserId, filters, sortField, sortDirection, agentsCache]);
+  }, [currentUserId, filters, sortField, sortDirection, agentsCache, isAdmin]);
 
   // Charger les contacts quand les dépendances changent
   useEffect(() => {
@@ -255,7 +258,7 @@ const ContactsList = () => {
     navigate(`/contact/${contactId}`);
   };
 
-  // Naviguer vers l'édition d'un contact (seulement si propriétaire)
+  // Naviguer vers l'édition d'un contact (seulement si propriétaire ou admin)
   const handleEditContact = (contactId: string) => {
     navigate(`/contact/${contactId}/edit`);
   };
@@ -275,7 +278,15 @@ const ContactsList = () => {
             <div className="flex items-center">
               <Users className="h-8 w-8 text-blue-600 mr-3" />
               <div>
-                <h1 className="text-2xl font-semibold text-gray-900">Liste des Contacts</h1>
+                <h1 className="text-2xl font-semibold text-gray-900">
+                  Liste des Contacts
+                  {isAdmin && (
+                    <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Admin
+                    </span>
+                  )}
+                </h1>
                 <p className="text-sm text-gray-600">
                   {totalContacts} contact{totalContacts > 1 ? 's' : ''} 
                   {filters.myContacts ? ' (mes contacts)' : filters.agent ? ` (agent sélectionné)` : ' (tous les agents)'}
@@ -300,9 +311,9 @@ const ContactsList = () => {
           )}
 
           {/* Message de débogage */}
-          {!loading && (
+          {!loading && isAdmin && (
             <div className="mt-2 text-xs text-gray-500">
-              Debug: {contacts.length} contacts chargés, {filteredContacts.length} après filtrage, {agentsCache.size} agents en cache
+              Debug Admin: {contacts.length} contacts chargés, {filteredContacts.length} après filtrage, {agentsCache.size} agents en cache
             </div>
           )}
         </div>
@@ -339,6 +350,7 @@ const ContactsList = () => {
           totalContacts={filteredContacts.length}
           contactsPerPage={contactsPerPage}
           onPageChange={setCurrentPage}
+          isAdmin={isAdmin}
         />
       </div>
     </div>

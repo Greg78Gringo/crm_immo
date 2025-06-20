@@ -1,16 +1,19 @@
 import React from 'react';
 import { Eye, Edit, Mail, Phone } from 'lucide-react';
 import type { Contact } from '../../pages/ContactsList';
+import { useAuth } from '../../hooks/useAuth';
 
 interface ContactRowProps {
   contact: Contact;
   currentUserId: string;
   onViewContact: (contactId: string) => void;
   onEditContact: (contactId: string) => void;
+  isAdmin?: boolean;
 }
 
-const ContactRow = ({ contact, currentUserId, onViewContact, onEditContact }: ContactRowProps) => {
+const ContactRow = ({ contact, currentUserId, onViewContact, onEditContact, isAdmin = false }: ContactRowProps) => {
   const isOwner = contact.agent_id === currentUserId;
+  const canEdit = isOwner || isAdmin;
   
   const getDisplayName = (firstName: string, lastName: string) => {
     const name = `${firstName} ${lastName}`.trim();
@@ -140,11 +143,11 @@ const ContactRow = ({ contact, currentUserId, onViewContact, onEditContact }: Co
             <Eye className="h-4 w-4" />
           </button>
           
-          {isOwner && (
+          {canEdit && (
             <button
               onClick={() => onEditContact(contact.id)}
               className="text-green-600 hover:text-green-900 p-1 rounded-md hover:bg-green-50 transition-colors"
-              title="Modifier le contact"
+              title={isOwner ? "Modifier le contact" : "Modifier (mode admin)"}
             >
               <Edit className="h-4 w-4" />
             </button>

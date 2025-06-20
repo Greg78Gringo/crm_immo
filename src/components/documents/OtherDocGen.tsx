@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Trash2, CheckCircle, Calendar, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
+import { FileText, Plus, Trash2, CheckCircle, Calendar, ChevronDown, ChevronUp, MessageSquare, Shield } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../hooks/useAuth';
 
 interface RequiredDocument {
   id?: string;
@@ -17,11 +18,50 @@ interface OtherDocGenProps {
 }
 
 const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
+  const { isAdmin } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [requiredDocuments, setRequiredDocuments] = useState<RequiredDocument[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [dealAgentId, setDealAgentId] = useState<string>('');
+  const [canModify, setCanModify] = useState(false);
+
+  // Charger l'utilisateur actuel et vérifier les permissions
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (user) {
+          setCurrentUserId(user.id);
+          
+          // Vérifier si l'utilisateur est propriétaire de l'affaire
+          if (dealId) {
+            const { data: dealData, error: dealError } = await supabase
+              .from('deals')
+              .select('agent_id')
+              .eq('id', dealId)
+              .single();
+              
+            if (dealError && dealError.code !== 'PGRST116') {
+              throw dealError;
+            }
+            
+            if (dealData) {
+              setDealAgentId(dealData.agent_id);
+              setCanModify(isAdmin || dealData.agent_id === user.id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Erreur lors du chargement de l\'utilisateur:', err);
+      }
+    };
+
+    getCurrentUser();
+  }, [dealId, isAdmin]);
 
   // Charger les documents requis existants
   useEffect(() => {
@@ -56,6 +96,11 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
   const addDocument = async () => {
     if (!dealId) {
       setError('Aucune affaire sélectionnée');
+      return;
+    }
+
+    if (!canModify) {
+      setError('Vous n\'avez pas les permissions pour ajouter des documents à cette affaire');
       return;
     }
 
@@ -104,6 +149,11 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
 
   // Supprimer un document
   const removeDocument = async (documentId: string, index: number) => {
+    if (!canModify) {
+      setError('Vous n\'avez pas les permissions pour supprimer des documents de cette affaire');
+      return;
+    }
+
     setError('');
     setSuccess('');
 
@@ -126,6 +176,11 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
 
   // Mettre à jour un document
   const updateDocument = async (documentId: string, field: string, value: string | boolean) => {
+    if (!canModify) {
+      setError('Vous n\'avez pas les permissions pour modifier les documents de cette affaire');
+      return;
+    }
+
     try {
       const updateData: any = { [field]: value };
       
@@ -185,6 +240,12 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
           <FileText className="h-6 w-6 text-indigo-600 mr-2" />
           <h2 className="text-xl font-semibold text-gray-900">
             Autres Documents
+            {isAdmin && (
+              <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                <Shield className="h-3 w-3 mr-1" />
+                Admin
+              </span>
+            )}
             {requiredDocuments.length > 0 && (
               <span className="ml-2 text-sm text-gray-500">
                 - {requiredDocuments.length} document{requiredDocuments.length > 1 ? 's' : ''}
@@ -202,25 +263,68 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
       {isExpanded && (
         <div className="p-6 border-t border-gray-200">
           <div className="space-y-6">
-            {/* Bouton d'ajout */}
-            <div className="flex justify-between items-center">
-              <p className="text-gray-600">
-                Ajoutez manuellement des documents spécifiques qui ne sont pas couverts par les règles automatiques.
-              </p>
-              <button
-                type="button"
-                onClick={addDocument}
-                disabled={loading}
-                className={`flex items-center px-4 py-2 rounded-md text-white font-medium ${
-                  loading
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-indigo-600 hover:bg-indigo-700'
-                }`}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                {loading ? 'Ajout...' : 'Ajouter un Document'}
-              </button>
-            </div>
+            {/* Indicateur de permissions */}
+            {dealAgentId && (
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  {isAdmin && dealAgentId !== currentUserId && (
+                    <span className="text-blue-600">
+                      Affaire gérée par un autre agent (ID: {dealAgentId.substring(0, 8)}...)
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center">
+                  {canModify ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
+                      Modification autorisée
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Consultation seule
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Bouton d'ajout - seulement si permissions */}
+            {canModify && (
+              <div className="flex justify-between items-center">
+                <p className="text-gray-600">
+                  Ajoutez manuellement des documents spécifiques qui ne sont pas couverts par les règles automatiques.
+                </p>
+                <button
+                  type="button"
+                  onClick={addDocument}
+                  disabled={loading}
+                  className={`flex items-center px-4 py-2 rounded-md text-white font-medium ${
+                    loading
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  {loading ? 'Ajout...' : 'Ajouter un Document'}
+                </button>
+              </div>
+            )}
+
+            {/* Message si pas de permissions */}
+            {!canModify && (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-md">
+                <div className="flex items-center">
+                  <Shield className="h-5 w-5 text-yellow-600 mr-2" />
+                  <div>
+                    <p className="font-medium">Mode consultation uniquement</p>
+                    <p className="text-sm mt-1">
+                      Vous pouvez consulter les documents mais pas les modifier pour cette affaire.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Messages d'erreur et de succès */}
             {error && (
@@ -256,14 +360,16 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                               )}
                             </h4>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => doc.id && removeDocument(doc.id, index)}
-                            className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50 transition-colors"
-                            title="Supprimer le document"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {canModify && (
+                            <button
+                              type="button"
+                              onClick={() => doc.id && removeDocument(doc.id, index)}
+                              className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50 transition-colors"
+                              title="Supprimer le document"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
 
                         {/* Champs de saisie */}
@@ -279,6 +385,7 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                               onChange={(e) => doc.id && updateDocument(doc.id, 'document_name', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                               placeholder="Ex: Attestation d'assurance, Relevé bancaire..."
+                              disabled={!canModify}
                             />
                           </div>
 
@@ -291,6 +398,7 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                               value={doc.status}
                               onChange={(e) => doc.id && updateDocument(doc.id, 'status', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                              disabled={!canModify}
                             >
                               <option value="seller">Vendeur</option>
                               <option value="buyer">Acquéreur</option>
@@ -313,6 +421,7 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                               checked={doc.received}
                               onChange={(e) => doc.id && updateDocument(doc.id, 'received', e.target.checked)}
                               className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                              disabled={!canModify}
                             />
                             <span className="ml-2 text-sm text-gray-700">Document reçu</span>
                           </label>
@@ -325,6 +434,7 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                                 value={doc.reception_date || ''}
                                 onChange={(e) => doc.id && updateDocument(doc.id, 'reception_date', e.target.value)}
                                 className="text-sm border border-gray-300 rounded px-2 py-1"
+                                disabled={!canModify}
                               />
                             </div>
                           )}
@@ -345,6 +455,7 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                               value={doc.date_doc || ''}
                               onChange={(e) => doc.id && updateDocument(doc.id, 'date_doc', e.target.value)}
                               className="w-full text-sm border border-gray-300 rounded px-2 py-1"
+                              disabled={!canModify}
                             />
                           </div>
                           
@@ -359,6 +470,7 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                                 onChange={(e) => doc.id && updateDocument(doc.id, 'comments', e.target.value)}
                                 className="w-full text-sm border border-gray-300 rounded px-2 py-1 pr-8"
                                 placeholder="Ajouter un commentaire..."
+                                disabled={!canModify}
                               />
                               <MessageSquare className="absolute right-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
                             </div>
@@ -378,9 +490,15 @@ const OtherDocGen = ({ dealId }: OtherDocGenProps) => {
                 <p className="text-gray-600 mb-4">
                   Aucun document supplémentaire ajouté pour cette affaire.
                 </p>
-                <p className="text-sm text-gray-500">
-                  Utilisez le bouton "Ajouter un Document" pour ajouter des documents spécifiques qui ne sont pas couverts par les règles automatiques.
-                </p>
+                {canModify ? (
+                  <p className="text-sm text-gray-500">
+                    Utilisez le bouton "Ajouter un Document" pour ajouter des documents spécifiques qui ne sont pas couverts par les règles automatiques.
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    Aucun document supplémentaire n'a été ajouté manuellement pour cette affaire.
+                  </p>
+                )}
               </div>
             )}
           </div>

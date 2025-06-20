@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Upload, Trash2, Eye, Star, X } from 'lucide-react';
+import { Camera, Upload, Trash2, Eye, Star, X, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 interface Deal {
   id: string;
   name: string;
   created_at: string;
+  agent_id: string;
+  agent_name?: string;
 }
 
 interface PhotoMetadata {
@@ -33,6 +36,7 @@ interface Photo {
 }
 
 const Phototheque = () => {
+  const { isAdmin } = useAuth();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [selectedDealId, setSelectedDealId] = useState<string>('');
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -44,31 +48,127 @@ const Phototheque = () => {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [updatingReference, setUpdatingReference] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<Photo | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
-  // Charger les affaires de l'agent
+  // Charger l'utilisateur actuel
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (user) {
+          setCurrentUserId(user.id);
+          console.log('👤 Utilisateur actuel chargé:', user.id);
+          console.log('🔑 Mode Admin:', isAdmin);
+        }
+      } catch (err) {
+        console.error('Erreur lors du chargement de l\'utilisateur:', err);
+      }
+    };
+
+    getCurrentUser();
+  }, [isAdmin]);
+
+  // Charger les affaires selon le rôle
   useEffect(() => {
     const fetchDeals = async () => {
+      if (!currentUserId) {
+        console.log('⏳ En attente de l\'utilisateur actuel...');
+        return;
+      }
+
       try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (userError) throw userError;
-        if (user) {
+        console.log('🔄 Début du chargement des affaires...');
+        console.log('👤 Utilisateur actuel:', currentUserId);
+        console.log('🔑 Mode Admin:', isAdmin);
+        
+        if (isAdmin) {
+          // Admin : charger TOUTES les affaires avec les noms des agents
+          console.log('🔑 Mode Admin : Chargement de TOUTES les affaires');
+          
+          // Première étape : charger toutes les affaires
           const { data: dealsData, error: dealsError } = await supabase
             .from('deals')
-            .select('id, name, created_at')
-            .eq('agent_id', user.id)
+            .select('id, name, created_at, agent_id')
             .order('created_at', { ascending: false });
 
-          if (dealsError) throw dealsError;
+          if (dealsError) {
+            console.error('❌ Erreur lors du chargement des affaires:', dealsError);
+            throw dealsError;
+          }
+
+          console.log('📊 Affaires brutes chargées:', dealsData?.length || 0);
+          console.log('📋 Première affaire:', dealsData?.[0]);
+
+          if (!dealsData || dealsData.length === 0) {
+            console.log('⚠️ Aucune affaire trouvée dans la base de données');
+            setDeals([]);
+            return;
+          }
+
+          // Deuxième étape : enrichir avec les noms des agents
+          console.log('🔄 Enrichissement avec les noms des agents...');
+          const dealsWithAgentNames = await Promise.all(
+            dealsData.map(async (deal) => {
+              try {
+                const { data: agentData, error: agentError } = await supabase
+                  .from('agents_view')
+                  .select('first_name, last_name')
+                  .eq('id', deal.agent_id)
+                  .single();
+
+                if (agentError) {
+                  console.warn(`⚠️ Erreur lors du chargement de l'agent ${deal.agent_id}:`, agentError);
+                }
+
+                const agentName = agentData 
+                  ? `${agentData.first_name} ${agentData.last_name}`.trim()
+                  : 'Agent inconnu';
+
+                return {
+                  ...deal,
+                  agent_name: agentName
+                };
+              } catch (err) {
+                console.warn(`⚠️ Erreur lors du chargement de l'agent ${deal.agent_id}:`, err);
+                return {
+                  ...deal,
+                  agent_name: 'Agent inconnu'
+                };
+              }
+            })
+          );
+
+          console.log('✅ Affaires enrichies:', dealsWithAgentNames.length);
+          console.log('📋 Première affaire enrichie:', dealsWithAgentNames[0]);
+          setDeals(dealsWithAgentNames);
+          
+        } else {
+          // Agent normal : charger seulement ses affaires
+          console.log('👤 Mode Agent : Chargement des affaires personnelles');
+          
+          const { data: dealsData, error: dealsError } = await supabase
+            .from('deals')
+            .select('id, name, created_at, agent_id')
+            .eq('agent_id', currentUserId)
+            .order('created_at', { ascending: false });
+
+          if (dealsError) {
+            console.error('❌ Erreur lors du chargement des affaires:', dealsError);
+            throw dealsError;
+          }
+          
+          console.log('📊 Affaires personnelles chargées:', dealsData?.length || 0);
           setDeals(dealsData || []);
         }
       } catch (err) {
-        console.error('Erreur lors du chargement des affaires:', err);
+        console.error('💥 Erreur lors du chargement des affaires:', err);
         setError('Erreur lors du chargement des affaires');
       }
     };
 
     fetchDeals();
-  }, []);
+  }, [currentUserId, isAdmin]);
 
   // Charger les photos quand une affaire est sélectionnée
   useEffect(() => {
@@ -130,6 +230,11 @@ const Phototheque = () => {
     }
   };
 
+  // Vérifier si l'utilisateur peut modifier cette affaire
+  const canModifyDeal = (dealAgentId: string) => {
+    return isAdmin || dealAgentId === currentUserId;
+  };
+
   const getNextPhotoIndex = () => {
     const existingIndexes = photos
       .map(photo => {
@@ -144,6 +249,13 @@ const Phototheque = () => {
   const handleFileUpload = async (files: FileList) => {
     if (!selectedDealId) {
       setError('Veuillez sélectionner une affaire');
+      return;
+    }
+
+    // Vérifier les permissions
+    const selectedDeal = deals.find(d => d.id === selectedDealId);
+    if (!selectedDeal || !canModifyDeal(selectedDeal.agent_id)) {
+      setError('Vous n\'avez pas les permissions pour ajouter des photos à cette affaire');
       return;
     }
 
@@ -236,6 +348,14 @@ const Phototheque = () => {
   };
 
   const deletePhoto = async (photo: Photo) => {
+    // Vérifier les permissions
+    const selectedDeal = deals.find(d => d.id === selectedDealId);
+    if (!selectedDeal || !canModifyDeal(selectedDeal.agent_id)) {
+      setError('Vous n\'avez pas les permissions pour supprimer des photos de cette affaire');
+      setShowDeleteConfirm(null);
+      return;
+    }
+
     try {
       console.log(`🗑️ Suppression de la photo: ${photo.name}`);
 
@@ -267,6 +387,13 @@ const Phototheque = () => {
 
   const setMainPhoto = async (photo: Photo) => {
     if (updatingReference) return;
+
+    // Vérifier les permissions
+    const selectedDeal = deals.find(d => d.id === selectedDealId);
+    if (!selectedDeal || !canModifyDeal(selectedDeal.agent_id)) {
+      setError('Vous n\'avez pas les permissions pour modifier les photos de cette affaire');
+      return;
+    }
     
     setUpdatingReference(true);
     setError('');
@@ -325,6 +452,10 @@ const Phototheque = () => {
     });
   };
 
+  // Obtenir les permissions pour l'affaire sélectionnée
+  const selectedDeal = deals.find(d => d.id === selectedDealId);
+  const canModifySelectedDeal = selectedDeal ? canModifyDeal(selectedDeal.agent_id) : false;
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* En-tête */}
@@ -333,9 +464,20 @@ const Phototheque = () => {
           <div className="flex items-center">
             <Camera className="h-8 w-8 text-blue-600 mr-3" />
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">Photothèque</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">
+                Photothèque
+                {isAdmin && (
+                  <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    <Shield className="h-3 w-3 mr-1" />
+                    Admin
+                  </span>
+                )}
+              </h1>
               <p className="text-sm text-gray-600">
-                Gérez les photos de vos biens immobiliers
+                {isAdmin 
+                  ? 'Gérez les photos de tous les biens immobiliers (accès administrateur)'
+                  : 'Gérez les photos de vos biens immobiliers'
+                }
               </p>
             </div>
           </div>
@@ -360,6 +502,13 @@ const Phototheque = () => {
               Mise à jour de la photo de référence en cours...
             </div>
           )}
+
+          {/* Debug info pour les admins */}
+          {isAdmin && (
+            <div className="mt-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-md text-sm">
+              <strong>Debug Admin:</strong> {deals.length} affaires chargées, Utilisateur: {currentUserId.substring(0, 8)}...
+            </div>
+          )}
         </div>
       </div>
 
@@ -369,6 +518,11 @@ const Phototheque = () => {
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Sélection de l'affaire
+            {isAdmin && (
+              <span className="ml-2 text-sm text-blue-600">
+                ({deals.length} affaires disponibles - toutes les affaires)
+              </span>
+            )}
           </h2>
           <div className="max-w-md">
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -383,14 +537,46 @@ const Phototheque = () => {
               {deals.map((deal) => (
                 <option key={deal.id} value={deal.id}>
                   {deal.name} - {formatDate(deal.created_at)}
+                  {isAdmin && deal.agent_name && ` (Agent: ${deal.agent_name})`}
                 </option>
               ))}
             </select>
           </div>
+
+          {/* Indicateur de permissions */}
+          {selectedDeal && (
+            <div className="mt-4 p-3 rounded-md bg-gray-50 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    Affaire sélectionnée : {selectedDeal.name}
+                  </p>
+                  {isAdmin && selectedDeal.agent_name && (
+                    <p className="text-xs text-gray-600">
+                      Agent responsable : {selectedDeal.agent_name}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center">
+                  {canModifySelectedDeal ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
+                      Modification autorisée
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      <Eye className="h-3 w-3 mr-1" />
+                      Lecture seule
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Zone d'upload */}
-        {selectedDealId && (
+        {selectedDealId && canModifySelectedDeal && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Ajouter des photos
@@ -442,6 +628,21 @@ const Phototheque = () => {
           </div>
         )}
 
+        {/* Message si pas de permissions de modification */}
+        {selectedDealId && !canModifySelectedDeal && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <Eye className="h-5 w-5 text-yellow-600 mr-2" />
+              <div>
+                <p className="text-sm font-medium text-yellow-800">Mode consultation</p>
+                <p className="text-xs text-yellow-700 mt-1">
+                  Vous pouvez consulter les photos mais pas les modifier car cette affaire appartient à un autre agent.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Galerie de photos */}
         {selectedDealId && (
           <div className="bg-white rounded-lg shadow-lg p-6">
@@ -466,9 +667,15 @@ const Phototheque = () => {
               <div className="text-center py-12">
                 <Camera className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600">Aucune photo pour cette affaire</p>
-                <p className="text-sm text-gray-500">
-                  Ajoutez des photos en utilisant la zone d'upload ci-dessus
-                </p>
+                {canModifySelectedDeal ? (
+                  <p className="text-sm text-gray-500">
+                    Ajoutez des photos en utilisant la zone d'upload ci-dessus
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    Cette affaire n'a pas encore de photos
+                  </p>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
@@ -496,62 +703,80 @@ const Phototheque = () => {
                       </div>
                     )}
 
-                    {/* Overlay avec actions */}
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2">
-                        {/* Bouton voir */}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPhoto(photo)}
-                          className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors shadow-lg"
-                          title="Voir en grand"
-                        >
-                          <Eye className="h-4 w-4 text-gray-700" />
-                        </button>
+                    {/* Overlay avec actions (seulement si permissions de modification) */}
+                    {canModifySelectedDeal && (
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2">
+                          {/* Bouton voir */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPhoto(photo)}
+                            className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors shadow-lg"
+                            title="Voir en grand"
+                          >
+                            <Eye className="h-4 w-4 text-gray-700" />
+                          </button>
 
-                        {/* Bouton photo principale */}
-                        <button
-                          type="button"
-                          onClick={() => setMainPhoto(photo)}
-                          disabled={updatingReference}
-                          className={`p-2 rounded-full transition-colors shadow-lg ${
-                            updatingReference
-                              ? 'bg-gray-300 cursor-not-allowed'
-                              : photo.isMain
-                              ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                              : 'bg-white hover:bg-gray-100 text-gray-700'
-                          }`}
-                          title={
-                            updatingReference
-                              ? 'Mise à jour en cours...'
-                              : photo.isMain 
-                              ? 'Retirer comme référence' 
-                              : 'Définir comme référence'
-                          }
-                        >
-                          {updatingReference ? (
-                            <div className="animate-spin h-4 w-4 border-2 border-gray-600 border-t-transparent rounded-full"></div>
-                          ) : (
-                            <Star className={`h-4 w-4 ${photo.isMain ? 'fill-current' : ''}`} />
-                          )}
-                        </button>
+                          {/* Bouton photo principale */}
+                          <button
+                            type="button"
+                            onClick={() => setMainPhoto(photo)}
+                            disabled={updatingReference}
+                            className={`p-2 rounded-full transition-colors shadow-lg ${
+                              updatingReference
+                                ? 'bg-gray-300 cursor-not-allowed'
+                                : photo.isMain
+                                ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                                : 'bg-white hover:bg-gray-100 text-gray-700'
+                            }`}
+                            title={
+                              updatingReference
+                                ? 'Mise à jour en cours...'
+                                : photo.isMain 
+                                ? 'Retirer comme référence' 
+                                : 'Définir comme référence'
+                            }
+                          >
+                            {updatingReference ? (
+                              <div className="animate-spin h-4 w-4 border-2 border-gray-600 border-t-transparent rounded-full"></div>
+                            ) : (
+                              <Star className={`h-4 w-4 ${photo.isMain ? 'fill-current' : ''}`} />
+                            )}
+                          </button>
 
-                        {/* Bouton supprimer */}
-                        <button
-                          type="button"
-                          onClick={() => confirmDeletePhoto(photo)}
-                          disabled={updatingReference}
-                          className={`p-2 rounded-full transition-colors shadow-lg ${
-                            updatingReference
-                              ? 'bg-gray-300 cursor-not-allowed'
-                              : 'bg-red-500 hover:bg-red-600 text-white'
-                          }`}
-                          title="Supprimer"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          {/* Bouton supprimer */}
+                          <button
+                            type="button"
+                            onClick={() => confirmDeletePhoto(photo)}
+                            disabled={updatingReference}
+                            className={`p-2 rounded-full transition-colors shadow-lg ${
+                              updatingReference
+                                ? 'bg-gray-300 cursor-not-allowed'
+                                : 'bg-red-500 hover:bg-red-600 text-white'
+                            }`}
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {/* Overlay simple pour consultation (mode lecture seule) */}
+                    {!canModifySelectedDeal && (
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPhoto(photo)}
+                            className="p-2 bg-white rounded-full hover:bg-gray-100 transition-colors shadow-lg"
+                            title="Voir en grand"
+                          >
+                            <Eye className="h-4 w-4 text-gray-700" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Informations */}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-2">

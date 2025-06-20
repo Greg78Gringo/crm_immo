@@ -1,22 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Edit, Eye, EyeOff, Shield } from 'lucide-react';
 import GeneralInfo from '../components/contact/GeneralInfo';
 import PersonalInfo from '../components/contact/PersonalInfo';
 import FamilyStatus from '../components/contact/FamilyStatus';
 import CurrentHousing from '../components/contact/CurrentHousing';
 import ProjectDiscovery from '../components/contact/ProjectDiscovery';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 const ContactView = () => {
   const { contactId, mode } = useParams<{ contactId: string; mode?: string }>();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [isOwner, setIsOwner] = useState(false);
   const [isEditMode, setIsEditMode] = useState(mode === 'edit');
+  const [contactAgentId, setContactAgentId] = useState<string>('');
+  const [contactAgentName, setContactAgentName] = useState<string>('');
 
   // États pour GeneralInfo
   const [source, setSource] = useState('');
@@ -125,8 +129,22 @@ const ContactView = () => {
         if (contactError) throw contactError;
         if (!contact) throw new Error('Contact non trouvé');
 
-        // Vérifier si l'utilisateur est propriétaire du contact
-        setIsOwner(contact.agent_id === user?.id);
+        // Vérifier si l'utilisateur est propriétaire du contact ou admin
+        setContactAgentId(contact.agent_id);
+        setIsOwner(contact.agent_id === user?.id || isAdmin);
+
+        // Si c'est un admin qui consulte un contact d'un autre agent, charger le nom de l'agent
+        if (isAdmin && contact.agent_id !== user?.id) {
+          const { data: agentData, error: agentError } = await supabase
+            .from('agents_view')
+            .select('first_name, last_name')
+            .eq('id', contact.agent_id)
+            .single();
+
+          if (!agentError && agentData) {
+            setContactAgentName(`${agentData.first_name} ${agentData.last_name}`.trim());
+          }
+        }
 
         // Remplir tous les champs
         setSource(contact.source || '');
@@ -196,7 +214,7 @@ const ContactView = () => {
     };
 
     loadContact();
-  }, [contactId]);
+  }, [contactId, isAdmin]);
 
   const handleSave = async () => {
     if (!contactId || !isOwner) return;
@@ -320,10 +338,21 @@ const ContactView = () => {
               <div>
                 <h1 className="text-2xl font-semibold text-gray-900">
                   {isEditMode ? 'Modification du contact' : 'Fiche contact'}
+                  {isAdmin && (
+                    <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Admin
+                    </span>
+                  )}
                 </h1>
                 <p className="text-sm text-gray-600">
                   {getDisplayName()}
-                  {!isOwner && (
+                  {isAdmin && contactAgentId !== currentUserId && contactAgentName && (
+                    <span className="ml-2 text-blue-600">
+                      (Agent: {contactAgentName})
+                    </span>
+                  )}
+                  {!isOwner && !isAdmin && (
                     <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
                       Lecture seule
                     </span>
@@ -366,7 +395,7 @@ const ContactView = () => {
                 </>
               )}
               
-              {!isOwner && (
+              {!isOwner && !isAdmin && (
                 <div className="flex items-center px-4 py-2 bg-gray-100 text-gray-600 rounded-md">
                   <Eye className="h-5 w-5 mr-2" />
                   Consultation

@@ -1,7 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { 
-  Users,
   LayoutDashboard,
   Database,
   UserCog,
@@ -9,10 +8,14 @@ import {
   UserPlus,
   FileText,
   List,
-  Camera
+  Camera,
+  Users
 } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 
 const Sidebar = () => {
+  const { isAdmin } = useAuth();
+
   const menuItems = [
     { icon: LayoutDashboard, label: 'Tableau de bord', path: '/dashboard' },
     { icon: FilePlus, label: 'Nouvelle Affaire', path: '/new-deal' },
@@ -20,15 +23,16 @@ const Sidebar = () => {
     { icon: List, label: 'Liste Contacts', path: '/contacts' },
     { icon: FileText, label: 'Liste des Documents', path: '/documents-list' },
     { icon: Camera, label: 'Photothèque', path: '/phototheque' },
-    { icon: UserCog, label: 'Mon Profil', path: '/agent-profile' },
-    { icon: Users, label: 'Utilisateurs', path: '/users' }
+    // Afficher "Gestion des Agents" seulement pour les admins
+    ...(isAdmin ? [{ icon: Users, label: 'Gestion des Agents', path: '/agents-management' }] : []),
+    { icon: UserCog, label: 'Mon Profil', path: '/agent-profile' }
   ];
 
   return (
     <div className="bg-gray-900 text-white w-64 min-h-screen px-4 py-6">
       <div className="flex items-center mb-8 px-2">
         <Database className="w-8 h-8 mr-2" />
-        <span className="text-xl font-bold">Panneau Admin</span>
+        <span className="text-xl font-bold">CRM Immobilier</span>
       </div>
       <nav>
         {menuItems.map((item) => (

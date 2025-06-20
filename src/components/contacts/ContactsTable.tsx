@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronUp, ChevronDown, Eye, Edit, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronUp, ChevronDown, Eye, Edit, ChevronLeft, ChevronRight, Shield } from 'lucide-react';
 import ContactRow from './ContactRow';
 import type { Contact } from '../../pages/ContactsList';
 
@@ -17,6 +17,7 @@ interface ContactsTableProps {
   totalContacts: number;
   contactsPerPage: number;
   onPageChange: (page: number) => void;
+  isAdmin?: boolean;
 }
 
 const ContactsTable = ({
@@ -32,7 +33,8 @@ const ContactsTable = ({
   totalPages,
   totalContacts,
   contactsPerPage,
-  onPageChange
+  onPageChange,
+  isAdmin = false
 }: ContactsTableProps) => {
   const getSortIcon = (field: string) => {
     if (sortField !== field) {
@@ -79,6 +81,12 @@ const ContactsTable = ({
           <div className="flex items-center space-x-4">
             <h3 className="text-lg font-semibold text-gray-900">
               Contacts ({totalContacts})
+              {isAdmin && (
+                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                  <Shield className="h-3 w-3 mr-1" />
+                  Admin
+                </span>
+              )}
             </h3>
             {totalContacts > 0 && (
               <span className="text-sm text-gray-600">
@@ -162,6 +170,7 @@ const ContactsTable = ({
                   currentUserId={currentUserId}
                   onViewContact={onViewContact}
                   onEditContact={onEditContact}
+                  isAdmin={isAdmin}
                 />
               ))}
             </tbody>

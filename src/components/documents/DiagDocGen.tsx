@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Play, CheckCircle, Calendar, ChevronDown, ChevronUp, MessageSquare, RefreshCw } from 'lucide-react';
+import { Activity, Play, CheckCircle, Calendar, ChevronDown, ChevronUp, MessageSquare, RefreshCw, Shield } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../hooks/useAuth';
 
 interface DocumentRule {
   id: string;
@@ -15,6 +16,7 @@ interface DocumentRule {
 interface DealInfo {
   id: string;
   name: string;
+  agent_id: string;
 }
 
 interface PropertyInfo {
@@ -38,6 +40,7 @@ interface DiagDocGenProps {
 }
 
 const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
+  const { isAdmin } = useAuth();
   const [isExpanded, setIsExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -47,6 +50,42 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [dealInfo, setDealInfo] = useState<DealInfo | null>(null);
   const [propertyInfo, setPropertyInfo] = useState<PropertyInfo | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [canModify, setCanModify] = useState(false);
+
+  // Charger l'utilisateur actuel et vérifier les permissions
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        if (user) {
+          setCurrentUserId(user.id);
+          
+          // Vérifier si l'utilisateur est propriétaire de l'affaire
+          if (dealId) {
+            const { data: dealData, error: dealError } = await supabase
+              .from('deals')
+              .select('agent_id')
+              .eq('id', dealId)
+              .single();
+              
+            if (dealError && dealError.code !== 'PGRST116') {
+              throw dealError;
+            }
+            
+            if (dealData) {
+              setCanModify(isAdmin || dealData.agent_id === user.id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Erreur lors du chargement de l\'utilisateur:', err);
+      }
+    };
+
+    getCurrentUser();
+  }, [dealId, isAdmin]);
 
   // Charger les règles de documents pour les diagnostics
   useEffect(() => {
@@ -84,7 +123,7 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
         // Charger les informations de l'affaire
         const { data: dealData, error: dealError } = await supabase
           .from('deals')
-          .select('id, name')
+          .select('id, name, agent_id')
           .eq('id', dealId)
           .single();
 
@@ -246,6 +285,11 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
       return;
     }
 
+    if (!canModify) {
+      setError('Vous n\'avez pas les permissions pour générer des documents pour cette affaire');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccess('');
@@ -341,6 +385,11 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
       return;
     }
 
+    if (!canModify) {
+      setError('Vous n\'avez pas les permissions pour mettre à jour les documents de cette affaire');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccess('');
@@ -377,6 +426,11 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
 
   // Mettre à jour le statut d'un document
   const updateDocumentStatus = async (documentId: string, field: string, value: boolean | string) => {
+    if (!canModify) {
+      setError('Vous n\'avez pas les permissions pour modifier les documents de cette affaire');
+      return;
+    }
+
     try {
       const updateData: any = { [field]: value };
       
@@ -420,6 +474,12 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
           <Activity className="h-6 w-6 text-green-600 mr-2" />
           <h2 className="text-xl font-semibold text-gray-900">
             Documents Diagnostics
+            {isAdmin && (
+              <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                <Shield className="h-3 w-3 mr-1" />
+                Admin
+              </span>
+            )}
             {hasGenerated && (
               <span className="ml-2 text-sm text-gray-500">
                 - {requiredDocuments.length} document{requiredDocuments.length > 1 ? 's' : ''}
@@ -442,8 +502,34 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
       {isExpanded && (
         <div className="p-6 border-t border-gray-200">
           <div className="space-y-6">
-            {/* Bouton de génération - Affiché seulement si pas encore généré */}
-            {!hasGenerated && (
+            {/* Indicateur de permissions */}
+            {dealInfo && (
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  {isAdmin && dealInfo.agent_id !== currentUserId && (
+                    <span className="text-blue-600">
+                      Affaire gérée par un autre agent (ID: {dealInfo.agent_id.substring(0, 8)}...)
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center">
+                  {canModify ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
+                      Génération autorisée
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      <Shield className="h-3 w-3 mr-1" />
+                      Consultation seule
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Bouton de génération - Affiché seulement si pas encore généré et permissions */}
+            {!hasGenerated && canModify && (
               <div className="flex justify-between items-center">
                 <p className="text-gray-600">
                   Générez automatiquement la liste des documents de diagnostics requis selon les caractéristiques de l'affaire et du bien.
@@ -464,8 +550,8 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
               </div>
             )}
 
-            {/* Bouton de mise à jour - Affiché si déjà généré */}
-            {hasGenerated && dealInfo && (
+            {/* Bouton de mise à jour - Affiché si déjà généré et permissions */}
+            {hasGenerated && dealInfo && canModify && (
               <div className="flex justify-between items-center">
                 <p className="text-gray-600">
                   Vérifiez s'il y a de nouveaux documents à ajouter suite aux modifications de l'affaire ou du bien.
@@ -548,6 +634,7 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
                                       checked={doc.received}
                                       onChange={(e) => updateDocumentStatus(doc.id!, 'received', e.target.checked)}
                                       className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                                      disabled={!canModify}
                                     />
                                     <span className="ml-2 text-sm text-gray-700">Document reçu</span>
                                   </label>
@@ -559,6 +646,7 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
                                         value={doc.reception_date || ''}
                                         onChange={(e) => updateDocumentStatus(doc.id!, 'reception_date', e.target.value)}
                                         className="text-sm border border-gray-300 rounded px-2 py-1"
+                                        disabled={!canModify}
                                       />
                                     </div>
                                   )}
@@ -580,6 +668,7 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
                                   value={doc.date_doc || ''}
                                   onChange={(e) => updateDocumentStatus(doc.id!, 'date_doc', e.target.value)}
                                   className="w-full text-sm border border-gray-300 rounded px-2 py-1"
+                                  disabled={!canModify}
                                 />
                               </div>
                               <div>
@@ -593,6 +682,7 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
                                     onChange={(e) => updateDocumentStatus(doc.id!, 'comments', e.target.value)}
                                     className="w-full text-sm border border-gray-300 rounded px-2 py-1 pr-8"
                                     placeholder="Ajouter un commentaire..."
+                                    disabled={!canModify}
                                   />
                                   <MessageSquare className="absolute right-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
                                 </div>
@@ -620,6 +710,21 @@ const DiagDocGen = ({ dealId }: DiagDocGenProps) => {
             {!dealInfo && (
               <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-md">
                 Aucune information sur l'affaire trouvée. Veuillez vérifier que l'affaire existe.
+              </div>
+            )}
+
+            {/* Message si pas de permissions */}
+            {!canModify && !hasGenerated && (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-md">
+                <div className="flex items-center">
+                  <Shield className="h-5 w-5 text-yellow-600 mr-2" />
+                  <div>
+                    <p className="font-medium">Mode consultation uniquement</p>
+                    <p className="text-sm mt-1">
+                      Vous pouvez consulter les informations mais pas générer de documents pour cette affaire.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
